@@ -1,19 +1,15 @@
-// SPDX-License-Identifier: MIT
-
+/// SPDX-License-Identifier: MIT
+//TODO redownloadn and redeploy
 pragma solidity >=0.8.9 <0.9.0;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
+import "erc721a/contracts/ERC721A.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-contract YourNftToken is ERC721, Ownable, ReentrancyGuard {
+contract StellaTest is ERC721A, Ownable, ReentrancyGuard {
 
   using Strings for uint256;
-  using Counters for Counters.Counter;
-
-  Counters.Counter private supply;
 
   bytes32 public merkleRoot;
   mapping(address => bool) public whitelistClaimed;
@@ -25,8 +21,13 @@ contract YourNftToken is ERC721, Ownable, ReentrancyGuard {
   uint256 public cost;
   uint256 public maxSupply;
   uint256 public maxMintAmountPerTx;
+  uint256 public preSaleMintAmount = 10;
+  uint256 public mellowMintAmount = 10;
+
+  mapping(address => uint256) public addressMintCount;
 
   bool public paused = true;
+  bool public preSalePaused = true;
   bool public whitelistMintEnabled = false;
   bool public revealed = false;
 
@@ -37,7 +38,7 @@ contract YourNftToken is ERC721, Ownable, ReentrancyGuard {
     uint256 _maxSupply,
     uint256 _maxMintAmountPerTx,
     string memory _hiddenMetadataUri
-  ) ERC721(_tokenName, _tokenSymbol) {
+  ) ERC721A(_tokenName, _tokenSymbol) {
     cost = _cost;
     maxSupply = _maxSupply;
     maxMintAmountPerTx = _maxMintAmountPerTx;
@@ -46,7 +47,7 @@ contract YourNftToken is ERC721, Ownable, ReentrancyGuard {
 
   modifier mintCompliance(uint256 _mintAmount) {
     require(_mintAmount > 0 && _mintAmount <= maxMintAmountPerTx, "Invalid mint amount!");
-    require(supply.current() + _mintAmount <= maxSupply, "Max supply exceeded!");
+    require(totalSupply() + _mintAmount <= maxSupply, "Max supply exceeded!");
     _;
   }
 
@@ -55,29 +56,41 @@ contract YourNftToken is ERC721, Ownable, ReentrancyGuard {
     _;
   }
 
-  function totalSupply() public view returns (uint256) {
-    return supply.current();
-  }
+  /* function totalSupply() public view returns (uint256) {
+    return totalSupply();
+  } */
 
-  function whitelistMint(uint256 _mintAmount, bytes32[] calldata _merkleProof) public payable mintCompliance(_mintAmount) mintPriceCompliance(_mintAmount) {
+  function whitelistMint(uint256 _mintAmount, bytes32[] calldata _merkleProof) public payable {
     // Verify whitelist requirements
     require(whitelistMintEnabled, "The whitelist sale is not enabled!");
     require(!whitelistClaimed[msg.sender], "Address already claimed!");
     bytes32 leaf = keccak256(abi.encodePacked(msg.sender));
     require(MerkleProof.verify(_merkleProof, merkleRoot, leaf), "Invalid proof!");
 
+    require(_mintAmount <= preSaleMintAmount, "Invalid mint amount!");
+    require(msg.value >= cost * _mintAmount, "Insufficient funds!"); 
+    uint MaxItemsForPreMint = _mintAmount + mellowMintAmount;
+    require(MaxItemsForPreMint > 0 && MaxItemsForPreMint <= maxMintAmountPerTx, "Invalid mint amount!");
+    require(totalSupply() + MaxItemsForPreMint <= maxSupply, "Max supply exceeded!");
+    uint256 ownerMintedCount = addressMintCount[msg.sender];
+    require(ownerMintedCount + MaxItemsForPreMint <= maxMintAmountPerTx, "max NFT per address");
+      
+    _safeMint(msg.sender, MaxItemsForPreMint);
     whitelistClaimed[msg.sender] = true;
-    _mintLoop(msg.sender, _mintAmount);
   }
 
-  function mint(uint256 _mintAmount) public payable mintCompliance(_mintAmount) mintPriceCompliance(_mintAmount) {
+  function mint(uint256 _mintAmount) public payable {
     require(!paused, "The contract is paused!");
-
-    _mintLoop(msg.sender, _mintAmount);
+    require(_mintAmount > 0 && _mintAmount <= maxMintAmountPerTx, "Invalid mint amount!");
+    require(totalSupply() + _mintAmount <= maxSupply, "Max supply exceeded!");
+    require(msg.value >= cost * _mintAmount, "Insufficient funds!");
+    _safeMint(msg.sender, _mintAmount);
   }
   
-  function mintForAddress(uint256 _mintAmount, address _receiver) public mintCompliance(_mintAmount) onlyOwner {
-    _mintLoop(_receiver, _mintAmount);
+  function mintForAddress(uint256 _mintAmount, address _receiver) public onlyOwner {
+    require(_mintAmount > 0 && _mintAmount <= maxMintAmountPerTx, "Invalid mint amount!");
+    require(totalSupply() + _mintAmount <= maxSupply, "Max supply exceeded!");
+    _safeMint(_receiver, _mintAmount);
   }
 
   function walletOfOwner(address _owner)
@@ -105,6 +118,7 @@ contract YourNftToken is ERC721, Ownable, ReentrancyGuard {
     return ownedTokenIds;
   }
 
+    //TODO make sure uri like
   function tokenURI(uint256 _tokenId)
     public
     view
@@ -163,30 +177,16 @@ contract YourNftToken is ERC721, Ownable, ReentrancyGuard {
     whitelistMintEnabled = _state;
   }
 
+    //TODO Replace this
   function withdraw() public onlyOwner nonReentrant {
-    // This will pay HashLips Lab Team 5% of the initial sale.
-    // By leaving the following lines as they are you will contribute to the
-    // development of tools like this and many others.
-    // =============================================================================
-    (bool hs, ) = payable(0x146FB9c3b2C13BA88c6945A759EbFa95127486F4).call{value: address(this).balance * 5 / 100}("");
-    require(hs);
-    // =============================================================================
-
-    // This will transfer the remaining contract balance to the owner.
-    // Do not remove this otherwise you will not be able to withdraw the funds.
-    // =============================================================================
-    (bool os, ) = payable(owner()).call{value: address(this).balance}("");
+    //TODO Replace this
+    (bool os, ) = payable(0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2).call{value: address(this).balance * 12 / 100}("");
     require(os);
-    // =============================================================================
+    //TODO Replace this
+    (bool hs, ) = payable(0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db).call{value: address(this).balance}("");
+    require(hs);
   }
-
-  function _mintLoop(address _receiver, uint256 _mintAmount) internal {
-    for (uint256 i = 0; i < _mintAmount; i++) {
-      supply.increment();
-      _safeMint(_receiver, supply.current());
-    }
-  }
-
+    //TODO Replace this
   function _baseURI() internal view virtual override returns (string memory) {
     return uriPrefix;
   }
